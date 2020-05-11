@@ -1,0 +1,134 @@
+#!/usr/bin/env python3
+
+import sys
+import os
+import argparse
+from PIL import Image
+
+
+def do_args():
+    argp = argparse.ArgumentParser(
+        prog="convert4b",
+        description="Convert raw RGB image data to 4 bit grayscale.",
+        #epilog=(""),
+        add_help=True,
+        argument_default = None,
+    )
+    sparser = argp.add_subparsers(
+        title='Positional arguments',
+        metavar='[subcommands]',
+        dest='format',
+    )
+
+    header = sparser.add_parser(
+        'header',
+        help='Format the output file as a C header file.',
+        conflict_handler="resolve"
+    )
+
+    binary = sparser.add_parser(
+        'binary',
+        help='Format the output file as a binary file.',
+        conflict_handler="resolve"
+    )
+
+    header.add_argument(
+        "-n", "--name",
+        help="Name of the output variable in C header files.",
+        type=str
+    )
+
+    argp.add_argument(
+        "image",
+        help="Input image file.",
+        type=str
+    )
+    for obj in (header, binary):
+
+        obj.add_argument(
+            "-o", "--output",
+            help="Output image file.",
+            type=str
+        )
+        obj.add_argument(
+            "-w", "--width",
+            help="Width of the output image in pixels.",
+            type=int,
+            required=True
+        )
+
+        obj.add_argument(
+            "-h", "--height",
+            help="Height of the output image in pixels.",
+            type=int,
+            required=True
+        )
+        obj.add_argument(
+            "-i", "--invert",
+            help="Invert image colours, negative.",
+            action="store_true",
+            default=False
+        )
+    return argp.parse_args()
+
+
+def main(args):
+    image = Image.open(args.image).convert("L").quantize(16)
+    size = args.width, args.height
+    image.thumbnail(size)
+    height, width = image.height, image.width
+
+    filename, file_extension = os.path.splitext(args.image)
+
+    binary = args.format == "binary"
+
+    # for i, pixel in enumerate(image.tobytes()):
+    #     if i % 128 == 0:
+    #         print()
+    #     print("{:X}".format(pixel), end="")
+
+    pixels = pixel_processor(image.tobytes(), args.invert)
+
+    if binary:
+        output_binary(pixels, output_file)
+    else:
+        name = args.name if args.name else os.path.basename(filename)
+
+        output_header(pixels, args.output, width, height, name)
+
+def pixel_processor(in_bytes, invert):
+    for i in range(0, len(in_bytes) - 1, 2):
+        if invert:
+            yield 0xff ^ ((in_bytes[i] << 4) | in_bytes[i+1])
+        else:
+            yield (in_bytes[i] << 4) | in_bytes[i+1]
+
+
+
+
+def output_binary(pixels, output_file):
+    with open(output_file, "wb") as img:
+        for pixel in pixels:
+            img.write(bytes([pixel]))
+
+
+def output_header(pixels, output_file, width, height, name):
+    try:
+        if output_file:
+            img = open(output_file, "w")
+        else :
+            img = sys.stdout
+        img.write("#define {}_width {}\n".format(name, width))
+        img.write("#define {}_height {}\n".format(name, height))
+        img.write("static const unsigned char {}_bits[] = {{".format(name))
+        for i, pixel in enumerate(pixels):
+            if i % 12 == 0:
+                img.write("\n  ")
+            img.write("0x{:02x}, ".format(pixel))
+        img.write("\n};\n")
+    finally:
+        if output_file:
+            img.close()
+
+if __name__ == "__main__":
+    main(do_args())
