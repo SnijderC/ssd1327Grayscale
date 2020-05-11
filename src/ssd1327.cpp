@@ -1,4 +1,6 @@
 #include "ssd1327.h"
+#include <stdlib.h>
+#include <algorithm>
 
 Ssd1327::Ssd1327(uint8_t width, uint8_t height):
   _width(width), _height(height) {}
@@ -272,6 +274,56 @@ uint8_t Ssd1327::clear() {
     _write(0x00);
   }
   return _endTransmission() == 0;
+}
+
+uint8_t Ssd1327::getHeight()
+{
+  return _height;
+}
+uint8_t Ssd1327::getWidth()
+{
+  return _width;
+}
+/**
+ * Can't just send data to the screen because a pixel is nibble and segments
+ * are 2 pixels wide. If the image width is uneven, the last segment of each
+ * line will contain both the last pixel of the lina and the first pixel of the
+ * next. That will cause a skew in the image.
+ */
+uint8_t Ssd1327::renderImageData(
+  uint8_t x, uint8_t y, uint8_t width, uint8_t height, uint8_t *image,
+  uint16_t len
+) {
+  uint8_t error = 0;
+  error = setColumnRange(x / 2, (x + width) / 2 - 1);
+  if (error != 0) return error;
+  error = setRowRange(y, y + height - 1);
+  if (error != 0) return error;
+  error = setStartLine(0);
+  if (error != 0) return error;
+  if (width % 2 == 0) {
+    return sendData(image, len);
+  }
+  // This will be way less efficient because it requires several operations on
+  // half of the image bytes.
+  uint8_t bufLen = width / 2 + 1;
+  uint8_t buffer[bufLen];
+  for (uint16_t i = 0; i < len; i += width / 2)
+  {
+    std::copy_n(image + i, bufLen, buffer);
+    if (i % 2 == 1)
+    {
+      for (uint8_t b = 0; b < bufLen; b++)
+      {
+        buffer[b] <<= 4;
+        buffer[b] |= buffer[b+1] >> 4;
+      }
+    }
+    buffer[bufLen - 1] &= 0xf0; // clear last 4 bits.
+    error = sendData(buffer, bufLen);
+    if (error != 0) return error;
+  }
+  return error;
 }
 
 // uint8_t Ssd1327::setHorizontalScrollRight() {

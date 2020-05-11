@@ -244,7 +244,7 @@ public:
     PixelResetPeriod      = 0xf0,
     FirstPrechargePeriod  = 0x01,
     SecondPrechargePeriod = 0x04,
-    DisplayClockFrequency = 0x0f,
+    DisplayClockFrequency = 0x00,
     DisplayClockDivider   = 0x00,
     PreChargeVoltage      = 0x05,
     ComDeselectVoltage    = 0x05,
@@ -353,6 +353,12 @@ public:
   uint8_t sendData(uint8_t command);
   uint8_t clear();
   uint8_t init();
+  uint8_t getHeight();
+  uint8_t getWidth();
+  uint8_t renderImageData(
+    uint8_t x, uint8_t y, uint8_t width, uint8_t height, uint8_t *image,
+    uint16_t len
+  );
 
 private:
   uint8_t _width;
