@@ -1,25 +1,274 @@
 #include "ssd1327Arduino.h"
-//#include <Arduino.h>
+#include <Arduino.h>
 
-Ssd1327Arduino::Ssd1327Arduino(TwoWire* i2c, uint8_t i2cAddress, uint8_t width, uint8_t height)
-: Ssd1327(width, height), _i2c(i2c), _address(i2cAddress) {
-    _i2c->begin();
-}
-void Ssd1327Arduino::_beginTransmission() {
-  //Serial.printf("<STARTBIT> 0x%.2x", _address);
+namespace Ssd1327 {
+
+uint8_t ArduinoI2cInterface::sendCommand(uint8_t *command, uint8_t len)
+{
   _i2c->beginTransmission(_address);
-}
-void Ssd1327Arduino::_write(uint8_t data) {
-  //Serial.printf(" 0x%.2x", data);
-  _i2c->write(data);
-}
-uint8_t Ssd1327Arduino::_endTransmission() {
-  //Serial.println(" <ENDBIT>");
+  _i2c->write(0x00); // Control byte 0x00 specifies commands.
+  while(len--)
+  {
+    _i2c->write(*command++);
+  }
   return _i2c->endTransmission(true);
 }
-void Ssd1327Arduino::_waitms(uint16_t ms) {
+
+uint8_t ArduinoI2cInterface::sendCommand(uint8_t command)
+{
+  _i2c->beginTransmission(_address);
+  _i2c->write(0x00); // Control byte 0x00 specifies commands.
+  _i2c->write((uint8_t)command);
+  return _i2c->endTransmission(true);
+}
+
+uint8_t ArduinoI2cInterface::sendData(uint8_t *data, uint16_t len)
+{
+  _i2c->beginTransmission(_address);
+  _i2c->write(0x40); // Control byte 0x40 specifies data.
+  uint8_t error = 0;
+  // Send data in chunks that fit in the display module I2C buffer.
+  while (len--)
+  {
+    // Reset connection for every buffer length minus address and control byte
+    if (len % (SSD1327_MAX_I2C_BUFFER - 2) == 0)
+    {
+      error = _i2c->endTransmission(true);
+      if (error !=0) return error;
+      _i2c->beginTransmission(_address);
+      _i2c->write(0x40);
+    }
+    _i2c->write(*data++);
+  }
+  return _i2c->endTransmission(true);
+}
+
+void ArduinoI2cInterface::beginTransmission()
+{
+  _i2c->beginTransmission(_address);
+}
+uint8_t ArduinoI2cInterface::endTransmission()
+{
+  return _i2c->endTransmission(true);
+}
+void ArduinoI2cInterface::write(uint8_t byte)
+{
+  _i2c->write(byte);
+}
+
+ArduinoI2cInterface::ArduinoI2cInterface(
+  TwoWire* i2c, uint8_t i2cAddress
+) {
+  type = (uint8_t)Interface::InterfaceType::I2c;
+}
+void ArduinoI2cInterface::begin()
+{
+  _i2c->begin();
+}
+uint8_t ArduinoSpiInterface::sendCommand(uint8_t *command, uint8_t len)
+{
+  beginTransmission();
+  if (_dc > Interface::NO_PIN)
+  {
+    Serial.println("CMD: Setting CD low.");
+    digitalWrite(_dc, LOW);
+      }
+  _spi.transfer(command, len);
+  if (_dc > Interface::NO_PIN)
+  {
+    Serial.println("CMD: Setting CD high.");
+    digitalWrite(_dc, HIGH);
+      }
+  return endTransmission();
+}
+
+uint8_t ArduinoSpiInterface::sendCommand(uint8_t command)
+{
+  beginTransmission();
+  if (_dc > Interface::NO_PIN)
+  {
+    Serial.println("CMD: Setting DC low.");
+    digitalWrite(_dc, LOW);
+      }
+  _spi.transfer(command);
+  if (_dc > Interface::NO_PIN)
+  {
+    Serial.println("CMD: Setting DC high.");
+    digitalWrite(_dc, HIGH);
+      }
+  return endTransmission();
+}
+
+uint8_t ArduinoSpiInterface::sendData(uint8_t *data, uint16_t len)
+{
+  if (_dc > Interface::NO_PIN)
+  {
+    Serial.println("DATA: Setting DC high.");
+    digitalWrite(_dc, HIGH);
+      }
+  beginTransmission();
+  // Send data in chunks that fit in the display module I2C buffer.
+  while (len--)
+  {
+    // Reset connection for every buffer length
+    if (len % SSD1327_MAX_SPI_BUFFER == 0)
+    {
+      endTransmission();
+      beginTransmission();
+    }
+    _spi.transfer(data, len);
+  }
+  return endTransmission();
+}
+
+void ArduinoSpiInterface::beginTransmission() {
+  if (_cs > Interface::NO_PIN)
+  {
+    Serial.println("BEGIN: Setting CS low.");
+    digitalWrite(_cs, LOW);
+      }
+  _spi.beginTransaction(_spiSettings);
+}
+void ArduinoSpiInterface::write(uint8_t data)
+{
+  _spi.transfer(data);
+}
+uint8_t ArduinoSpiInterface::endTransmission()
+{
+  _spi.endTransaction();
+  if (_cs > Interface::NO_PIN)
+  {
+    Serial.println("END: Setting CS high.");
+    digitalWrite(_cs, HIGH);
+      }
+  return 0;
+}
+
+bool ArduinoSpiInterface::hWreset()
+{
+  if (_rst == Interface::NO_PIN) return false;
+  digitalWrite(_rst, HIGH);
+	delay(100);
+	digitalWrite(_rst, LOW);
+	delay(100);
+	digitalWrite(_rst, HIGH);
+	delay(100);
+  return true;
+}
+
+ArduinoSpiInterface::ArduinoSpiInterface(
+    SPIClass spi,
+    int8_t dc,
+    int8_t cs,
+    int8_t rst,
+    unsigned long spiSpeed
+): _spi(spi), _dc(dc), _cs(cs), _rst(rst)
+{
+  type = (uint8_t)Interface::InterfaceType::Spi;
+  _spiSettings = SPISettings(_spiSpeed, MSBFIRST, SPI_MODE0);
+}
+void ArduinoSpiInterface::begin() {
+  if (_rst > Interface::NO_PIN) {
+    Serial.println("INIT: Setting reset high.");
+    pinMode(_rst, OUTPUT);
+    digitalWrite(_rst, HIGH);
+      }
+  if (_dc > Interface::NO_PIN)
+  {
+    Serial.println("INIT: Setting DC high.");
+    pinMode(_dc, OUTPUT);
+    digitalWrite(_dc, HIGH);
+      }
+  if (_cs > Interface::NO_PIN)
+  {
+    Serial.println("INIT: Setting CS high.");
+    pinMode(_cs, OUTPUT);
+    digitalWrite(_cs, HIGH);
+  }
+}
+
+ArduinoImplementation::ArduinoImplementation(
+  uint8_t width,
+  uint8_t height,
+  SPIClass spi,
+  int8_t dc,
+  int8_t cs,
+  int8_t rst,
+  unsigned long spiSpeed
+): Implementation(width, height)
+{
+  interface = new ArduinoSpiInterface(spi, dc, cs, rst, spiSpeed);
+}
+ArduinoImplementation::ArduinoImplementation(
+  uint8_t width,
+  uint8_t height,
+  SPIClass spi,
+  int8_t dc,
+  int8_t cs,
+  int8_t rst
+): ArduinoImplementation(width, height, spi, dc, cs, rst, DEFAULT_SPI_SPEED)
+{}
+ArduinoImplementation::ArduinoImplementation(
+  uint8_t width,
+  uint8_t height,
+  SPIClass spi,
+  int8_t dc,
+  int8_t cs
+): ArduinoImplementation(
+    width,
+    height,
+    spi,
+    dc,
+    cs,
+    Interface::NO_PIN,
+    DEFAULT_SPI_SPEED
+  )
+{}
+ArduinoImplementation::ArduinoImplementation(
+  uint8_t width,
+  uint8_t height,
+  SPIClass spi,
+  int8_t dc
+): ArduinoImplementation(
+    width,
+    height,
+    spi,
+    dc,
+    Interface::NO_PIN,
+    Interface::NO_PIN,
+    DEFAULT_SPI_SPEED
+  )
+{}
+
+ArduinoImplementation::ArduinoImplementation(
+  uint8_t width, uint8_t height, TwoWire* i2c, uint8_t i2cAddress
+):
+  Implementation(width, height)
+{
+  interface = new ArduinoI2cInterface(i2c, i2cAddress);
+}
+// This needs to be implemented to reclaim memory if the display object is
+// deleted.
+// ArduinoImplementation::~ArduinoImplementation() {
+//   switch (interface->type) {
+//     case (uint8_t)Interface::InterfaceType::Spi:
+//       //ArduinoSpiInterface *spiPtr = (ArduinoSpiInterface*)interface;
+//       delete(((ArduinoSpiInterface*)interface));
+//       break;
+//     case (uint8_t)Interface::InterfaceType::I2c:
+//       //ArduinoI2cInterface *ic2Ptr = (ArduinoI2cInterface*)interface;
+//       //delete(ic2Ptr);
+//       delete(((ArduinoI2cInterface*)interface));
+//       break;
+//   }
+// }
+void ArduinoImplementation::_waitms(uint16_t ms)
+{
     delay(ms);
 }
-uint8_t Ssd1327Arduino::begin() {
+uint8_t ArduinoImplementation::begin()
+{
+  interface->begin();
   return init();
+}
 }

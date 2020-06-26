@@ -1,167 +1,137 @@
 #include "ssd1327.h"
 #include <stdlib.h>
-#include <algorithm>
+#include <Arduino.h>
 
-Ssd1327::Ssd1327(uint8_t width, uint8_t height):
+using namespace Ssd1327;
+
+// Default implementation only returns false to indicate a software reset is
+// required.
+bool Interface::hwReset() {
+  return false;
+}
+
+Implementation::Implementation(uint8_t width, uint8_t height):
   _width(width), _height(height) {}
 
 
-uint8_t Ssd1327::sendCommand(Cmd command, uint8_t *args, uint8_t argLen)
-{
-  _beginTransmission();
-  _write(0x00); // Control byte 0x00 specifies commands.
-  _write((uint8_t)command);
-  while(argLen--)
-  {
-    _write(*args++);
-  }
-  return _endTransmission();
-}
-
-uint8_t Ssd1327::sendCommand(Cmd command)
-{
-  _beginTransmission();
-  _write(0x00); // Control byte 0x00 specifies commands.
-  _write((uint8_t)command);
-  return _endTransmission();
-}
-
-uint8_t Ssd1327::sendData(uint8_t *data, uint16_t len)
-{
-  _beginTransmission();
-  _write(0x40); // Control byte 0x40 specifies data.
-  uint8_t error = 0;
-  while (len--)
-  {
-    // Reset connection for every buffer length minus address and control byte
-    if (len % (SSD1327_MAX_I2C_BUFFER - 2) == 0) {
-      error = _endTransmission();
-      if (error !=0) return error;
-      _beginTransmission();
-      _write(0x40);
-    }
-    _write(*data++);
-  }
-  return _endTransmission();
-}
-
-uint8_t Ssd1327::sendData(uint8_t data)
-{
-  _beginTransmission();
-  _write(0x40); // Control byte 0x40 specifies data.
-  _write(data);
-  return _endTransmission();
-}
-
-uint8_t Ssd1327::setColumnRange(uint8_t start, uint8_t end) {
+uint8_t Implementation::setColumnRange(uint8_t start, uint8_t end) {
   start &= 0x3f; // 6-bit value
   end &= 0x3f; // 6-bit value
-  uint8_t buffer[2] = {start, end};
-  return sendCommand(Cmd::SetColumnRange, buffer, 2);
+  uint8_t buffer[3] = {(uint8_t)Cmd::SetColumnRange, start, end};
+  return interface->sendCommand(buffer, 3);
 }
-uint8_t Ssd1327::setRowRange(uint8_t start, uint8_t end) {
+uint8_t Implementation::setRowRange(uint8_t start, uint8_t end) {
   start &= 0x7f; // 7-bit value
   end &= 0x7f; // 7-bit value
-  uint8_t buffer[2] = {start, end};
-  return sendCommand(Cmd::SetRowRange, buffer, 2);
+  uint8_t buffer[3] = {(uint8_t)Cmd::SetRowRange, start, end};
+  return interface->sendCommand(buffer, 3);
 }
-uint8_t Ssd1327::resetRange() {
-  uint8_t buffer[2] = { 0x00, (uint8_t) (_width / 2 -1) };
-  return sendCommand(Cmd::SetColumnRange, buffer, 2);
+uint8_t Implementation::resetRange() {
+  uint8_t buffer[3] = {
+    (uint8_t) Cmd::SetColumnRange, 0x00, (uint8_t) (_width / 2 -1)
+  };
+  return interface->sendCommand(buffer, 3);
+  buffer[0] = (uint8_t)Cmd::SetRowRange;
   buffer[1] = _height - 1;
-  return sendCommand(Cmd::SetRowRange, buffer, 2);
+  return interface->sendCommand(buffer, 3);
 }
 
-uint8_t Ssd1327::setDisplayOff() {
-  return sendCommand(Cmd::DisplayOff);
+uint8_t Implementation::setDisplayOff() {
+  return interface->sendCommand((uint8_t)Cmd::DisplayOff);
 }
 
-uint8_t Ssd1327::setDisplayOn() {
-  return sendCommand(Cmd::DisplayOn);
+uint8_t Implementation::setDisplayOn() {
+  return interface->sendCommand((uint8_t)Cmd::DisplayOn);
 }
 
-uint8_t Ssd1327::setRemapping(
+uint8_t Implementation::setRemapping(
   bool comSplitOddEven,
   bool comRemapping,
   bool horizontalAddressIncrement,
   bool nibbleRemapping,
   bool gddrRemapping
 ) {
-  uint8_t remap = 0;
+  uint8_t buffer[2] {(uint8_t)Cmd::SetRemapping, 0};
   if (comSplitOddEven)
-    remap |= (uint8_t) Const::ComSplitOddEvenOnMask;
+    buffer[1] |= (uint8_t) Const::ComSplitOddEvenOnMask;
   if (comRemapping)
-    remap |= (uint8_t) Const::ComRemappingOnMask;
+    buffer[1] |= (uint8_t) Const::ComRemappingOnMask;
   if (horizontalAddressIncrement)
-    remap |= (uint8_t) Const::HorizontalAddressIncrementMask;
+    buffer[1] |= (uint8_t) Const::HorizontalAddressIncrementMask;
   if (nibbleRemapping)
-    remap |= (uint8_t) Const::NibbleRemappingOnMask;
+    buffer[1] |= (uint8_t) Const::NibbleRemappingOnMask;
   if (gddrRemapping)
-    remap |= (uint8_t) Const::GddrRemappingOnMask;
-  return sendCommand(Cmd::SetRemapping, &remap, 1);
+    buffer[1] |= (uint8_t) Const::GddrRemappingOnMask;
+  return interface->sendCommand(buffer, 2);
 }
 
-uint8_t Ssd1327::resetRemapping() {
+uint8_t Implementation::resetRemapping() {
   return setRemapping(true, true, false, false, true);
 }
 
-uint8_t Ssd1327::setContrastLevel(uint8_t level) {
-  return sendCommand(Cmd::SetContrastLevel, &level, 1);
+uint8_t Implementation::setContrastLevel(uint8_t level) {
+  uint8_t buffer[2] = {(uint8_t)Cmd::SetContrastLevel, level};
+  return interface->sendCommand(buffer, 2);
 }
 
-uint8_t Ssd1327::setStartLine(uint8_t line) {
+uint8_t Implementation::setStartLine(uint8_t line) {
   line &= 0x7f; // 7-bit value
-  return sendCommand(Cmd::SetStartLine, &line, 1);
+  uint8_t buffer[2] = {(uint8_t)Cmd::SetStartLine, line};
+  return interface->sendCommand(buffer, 2);
 }
 
-uint8_t Ssd1327::setDisplayOffset(uint8_t offset) {
+uint8_t Implementation::setDisplayOffset(uint8_t offset) {
   offset &= 0x7f; // 7-bit value
-  return sendCommand(Cmd::SetDisplayOffset, &offset, 1);
+  uint8_t buffer[2] = {(uint8_t)Cmd::SetDisplayOffset, offset};
+  return interface->sendCommand(buffer, 2);
 }
 
-uint8_t Ssd1327::setDisplayNormal() {
-  return sendCommand(Cmd::SetDisplayNormal);
+uint8_t Implementation::setDisplayNormal() {
+  return interface->sendCommand((uint8_t)Cmd::SetDisplayNormal);
 }
 
-uint8_t Ssd1327::setDisplayAllOn() {
-  return sendCommand(Cmd::SetDisplayAllOn);
+uint8_t Implementation::setDisplayAllOn() {
+  return interface->sendCommand((uint8_t)Cmd::SetDisplayAllOn);
 }
 
-uint8_t Ssd1327::setDisplayAllOff() {
-  return sendCommand(Cmd::SetDisplayAllOff);
+uint8_t Implementation::setDisplayAllOff() {
+  return interface->sendCommand((uint8_t)Cmd::SetDisplayAllOff);
 }
 
-uint8_t Ssd1327::setDisplayInverse() {
-  return sendCommand(Cmd::SetDisplayInverse);
+uint8_t Implementation::setDisplayInverse() {
+  return interface->sendCommand((uint8_t)Cmd::SetDisplayInverse);
 }
 
-uint8_t Ssd1327::setMuxRatio(uint8_t ratio) {
+uint8_t Implementation::setMuxRatio(uint8_t ratio) {
   ratio &= 0x7f;
-  return sendCommand(Cmd::SetMuxRatio, &ratio, 1);
+  uint8_t buffer[2] = {(uint8_t)Cmd::SetMuxRatio, ratio};
+  return interface->sendCommand(buffer, 2);
 }
 
-uint8_t Ssd1327::resetMuxRatio() {
+uint8_t Implementation::resetMuxRatio() {
   return setMuxRatio(_height-1);
 }
 
-uint8_t Ssd1327::enableVddRegulator(bool state) {
+uint8_t Implementation::enableVddRegulator(bool state) {
   uint8_t _state = (state ? 1 : 0 );
-  return sendCommand(Cmd::EnableVddRegulator, &_state, 1);
+   uint8_t buffer[2] = {(uint8_t)Cmd::EnableVddRegulator, _state};
+  return interface->sendCommand(buffer, 2);
 }
 
-uint8_t Ssd1327::setPhaseLength(uint8_t phaseLen) {
+uint8_t Implementation::setPhaseLength(uint8_t phaseLen) {
   _phaseLen = phaseLen;
-  return sendCommand(Cmd::SetPhaseLength, &phaseLen, 1);
+   uint8_t buffer[2] = {(uint8_t)Cmd::SetPhaseLength, phaseLen};
+  return interface->sendCommand(buffer, 2);
 }
 
-uint8_t Ssd1327::setPixelResetPeriod(uint8_t period) {
+uint8_t Implementation::setPixelResetPeriod(uint8_t period) {
   if (period < 1) period = 1;
   _phaseLen &= 0xf0;    // Reset lower order nibble.
   _phaseLen |= period;  // Set new lower order nibble.
   return setPhaseLength(_phaseLen);
 }
 
-uint8_t Ssd1327::setFirstPrechargePeriod(uint8_t period) {
+uint8_t Implementation::setFirstPrechargePeriod(uint8_t period) {
   if (period < 1) period = 1;
   period <<= 4;        // Shift lower order nibble to higher order.
   _phaseLen &= 0x0f;   // Reset higher order nibble.
@@ -169,57 +139,68 @@ uint8_t Ssd1327::setFirstPrechargePeriod(uint8_t period) {
   return setPhaseLength(_phaseLen);
 }
 
-uint8_t Ssd1327::setSecondPrechargePeriod(uint8_t period) {
+uint8_t Implementation::setSecondPrechargePeriod(uint8_t period) {
   if (period < 1) period = 1;
   period &= 0x0f;
-  return sendCommand(Cmd::SetSecondPrechargePeriod, &period, 1);
+  uint8_t buffer[2] = {(uint8_t)Cmd::SetSecondPrechargePeriod, period};
+  return interface->sendCommand(buffer, 2);
 }
 
-uint8_t Ssd1327::sendNoOp() {
-  return sendCommand(Cmd::SendNoOp);
+uint8_t Implementation::sendNoOp() {
+  return interface->sendCommand((uint8_t)Cmd::SendNoOp);
 }
 
-uint8_t Ssd1327::setDisplayClock(uint8_t clock, uint8_t divider) {
+uint8_t Implementation::setDisplayClock(uint8_t clock, uint8_t divider) {
   clock <<= 4;
   clock |= divider;
-  return sendCommand(Cmd::SetDisplayClock, &clock, 1);
+  uint8_t buffer[2] = {(uint8_t)Cmd::SetDisplayClock, clock};
+  return interface->sendCommand(buffer, 2);
 }
 
-uint8_t Ssd1327::setGpioMode(GpioMode mode) {
+uint8_t Implementation::setGpioMode(GpioMode mode) {
   _gpioMode = mode;
   return setGpio(false);
 }
 
-uint8_t Ssd1327::setGpio(bool state) {
+uint8_t Implementation::setGpio(bool state) {
   if (_gpioMode != GpioMode::Output) return 255;
   uint8_t _state = (uint8_t) GpioMode::Output;
   if (state)
     _state |= 0b01;
-  return sendCommand(Cmd::SetGpio, &_state, 1);
+  uint8_t buffer[2] = {(uint8_t)Cmd::SetGpio, _state};
+  return interface->sendCommand(buffer, 2);
 }
 
-uint8_t Ssd1327::setGrayscaleLevels(uint8_t* grayScaleMap) {
-  return sendCommand(Cmd::SetGrayscaleLevels, grayScaleMap, 15);
+uint8_t Implementation::setGrayscaleLevels(uint8_t* grayScaleMap) {
+  uint8_t buffer[16];
+  buffer[0] = (uint8_t)Cmd::SetGrayscaleLevels;
+  for (uint8_t i = 0; i < 14; i++) {
+    buffer[i+1] = *(grayScaleMap+i);
+  }
+  return interface->sendCommand(buffer, 16);
 }
 
-uint8_t Ssd1327::resetGrayscale() {
-  return sendCommand(Cmd::resetGrayscale);
+uint8_t Implementation::resetGrayscale() {
+  return interface->sendCommand((uint8_t)Cmd::resetGrayscale);
 }
 
-uint8_t Ssd1327::setPreChargeVoltage(uint8_t voltage) {
-  return sendCommand(Cmd::SetPreChargeVoltage, &voltage, 1);
+uint8_t Implementation::setPreChargeVoltage(uint8_t voltage) {
+  uint8_t buffer[2] = {(uint8_t)Cmd::SetPreChargeVoltage, voltage};
+  return interface->sendCommand(buffer, 2);
 }
 
-uint8_t Ssd1327::setComDeselectVoltage(uint8_t voltage) {
-  return sendCommand(Cmd::SetComDeselectVoltage, &voltage, 1);
+uint8_t Implementation::setComDeselectVoltage(uint8_t voltage) {
+  uint8_t buffer[2] = {(uint8_t)Cmd::SetComDeselectVoltage, voltage};
+  return interface->sendCommand(buffer, 2);
 }
 
-uint8_t Ssd1327::functionSelectionB(uint8_t selection) {
+uint8_t Implementation::functionSelectionB(uint8_t selection) {
   selection |= (uint8_t) Const::FunctionSelectionBBase;
-  return sendCommand(Cmd::FunctionSelectionB, &selection, 1);
+  uint8_t buffer[2] = {(uint8_t)Cmd::FunctionSelectionB, selection};
+  return interface->sendCommand(buffer, 2);
 }
 
-uint8_t Ssd1327::enableSecondPrecharge(bool state) {
+uint8_t Implementation::enableSecondPrecharge(bool state) {
   _functionSelB &= 0b01; // Reset higher order bit
   if (!state) {
     _functionSelB |= 0b10; // Set higher order bit: *disables* second pre-charge
@@ -227,7 +208,7 @@ uint8_t Ssd1327::enableSecondPrecharge(bool state) {
   return functionSelectionB(_functionSelB);
 }
 
-uint8_t Ssd1327::enableVslRegulator(bool state) {
+uint8_t Implementation::enableVslRegulator(bool state) {
   _functionSelB &= 0b10; // Reset lower order bit
   if (!state) {
     _functionSelB |= 0b01; // Set lower order bit: *disables* Vsl regulator
@@ -235,19 +216,21 @@ uint8_t Ssd1327::enableVslRegulator(bool state) {
   return functionSelectionB(_functionSelB);
 }
 
-uint8_t Ssd1327::mcuProtectEnable() {
+uint8_t Implementation::mcuProtectEnable() {
    uint8_t state = (
      (uint8_t)Const::McuProtectEnableBase | (uint8_t)Const::McuProtectLockMask
     );
-  return sendCommand(Cmd::McuProtectEnable, &state, 1);
+  uint8_t buffer[2] = {(uint8_t)Cmd::McuProtectEnable, state};
+  return interface->sendCommand(buffer, 2);
 }
 
-uint8_t Ssd1327::mcuProtectDisable() {
+uint8_t Implementation::mcuProtectDisable() {
   uint8_t state = (uint8_t) Const::McuProtectEnableBase; // base is unlock
-  return sendCommand(Cmd::McuProtectEnable, &state, 1);
+  uint8_t buffer[2] = {(uint8_t)Cmd::McuProtectEnable, state,};
+  return interface->sendCommand(buffer, 2);
 }
 
-uint8_t Ssd1327::clear() {
+uint8_t Implementation::clear() {
   // Calculate number of bytes required to clear the display.
   // width * height / 2 => one nibble per pixel divided by buffer length
   uint16_t num_bytes = _width * _height / 2;
@@ -261,26 +244,26 @@ uint8_t Ssd1327::clear() {
   // Clear by buffer length.
   for (uint16_t buf = 0; buf <= num_buffers; buf++)
   {
-    _beginTransmission();
-    _write(0x40);
+    interface->beginTransmission();
+    interface->write(0x40);
     for (uint16_t i = 0; i < (SSD1327_MAX_I2C_BUFFER - 2); i++) {
-      _write(0x00);
+      interface->write(0x00);
     }
-    if(_endTransmission() != 0) return false;
+    if(interface->endTransmission() != 0) return false;
   }
-  _beginTransmission();
+  interface->beginTransmission();
   // Clear remainder
   for (uint16_t i = 0; i < num_bytes; i++) {
-    _write(0x00);
+    interface->write(0x00);
   }
-  return _endTransmission() == 0;
+  return interface->endTransmission() == 0;
 }
 
-uint8_t Ssd1327::getHeight()
+uint8_t Implementation::getHeight()
 {
   return _height;
 }
-uint8_t Ssd1327::getWidth()
+uint8_t Implementation::getWidth()
 {
   return _width;
 }
@@ -290,58 +273,76 @@ uint8_t Ssd1327::getWidth()
  * line will contain both the last pixel of the lina and the first pixel of the
  * next. That will cause a skew in the image.
  */
-uint8_t Ssd1327::renderImageData(
+uint8_t Implementation::renderImageData(
   uint8_t x, uint8_t y, uint8_t width, uint8_t height, uint8_t *image,
   uint16_t len
 ) {
   uint8_t error = 0;
-  error = setColumnRange(x / 2, (x + width) / 2 - 1);
-  if (error != 0) return error;
   error = setRowRange(y, y + height - 1);
+  if (error != 0) return error;
+  error = setColumnRange(x / 2, (x + width) / 2 - 1 + (width % 2));
   if (error != 0) return error;
   error = setStartLine(0);
   if (error != 0) return error;
   if (width % 2 == 0) {
-    return sendData(image, len);
+    return interface->sendData(image, len);
   }
   // This will be way less efficient because it requires several operations on
   // half of the image bytes.
   uint8_t bufLen = width / 2 + 1;
   uint8_t buffer[bufLen];
-  for (uint16_t i = 0; i < len; i += width / 2)
+  for (uint16_t i = 0; i < len - 1; i += bufLen)
   {
     std::copy_n(image + i, bufLen, buffer);
-    if (i % 2 == 1)
+    Serial.printf(
+      "Buffer [i] 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x\n",
+      buffer[0], buffer[1], buffer[2], buffer[3], buffer[4]
+    );
+    if (i % 3 == 1)
     {
       for (uint8_t b = 0; b < bufLen; b++)
       {
         buffer[b] <<= 4;
         buffer[b] |= buffer[b+1] >> 4;
       }
+    } else {
+      i--;
     }
     buffer[bufLen - 1] &= 0xf0; // clear last 4 bits.
-    error = sendData(buffer, bufLen);
+    Serial.printf(
+      "Buffer [o] 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x\n",
+      buffer[0], buffer[1], buffer[2], buffer[3], buffer[4]
+    );
+    error = interface->sendData(buffer, bufLen);
     if (error != 0) return error;
   }
   return error;
 }
 
-// uint8_t Ssd1327::setHorizontalScrollRight() {
+// uint8_t Implementation::setHorizontalScrollRight() {
 // }
-// uint8_t Ssd1327::setHorizontalScrollLeft() {
+// uint8_t Implementation::setHorizontalScrollLeft() {
 // }
-// uint8_t Ssd1327::activateScroll() {
+// uint8_t Implementation::activateScroll() {
 // }
-// uint8_t Ssd1327::dectivateScroll() {
+// uint8_t Implementation::dectivateScroll() {
 //}
 
+uint8_t Implementation::reset() {
+  if (!interface->hwReset()) return 0;
+  return clear();
+}
+
 // TODO: Reset everything, then set it again?
-uint8_t Ssd1327::init() {
+uint8_t Implementation::init() {
   uint8_t error = 0;
+  error |= reset();
   // In case the display is in locked mode, unlock it.
   error |= mcuProtectDisable();
-  // Turn it off to clear the display.
+  // Turn it off for now.
   error |= setDisplayOff();
+  // Enable Vdd regulator
+  error |= enableVddRegulator(true);
   // Set MUX ration to amount of display lines.
   error |= resetMuxRatio();
   // Start rendering on line 1.
@@ -350,8 +351,6 @@ uint8_t Ssd1327::init() {
   error |= setDisplayOffset((uint8_t) Default::DisplayOffset);
   // Only set necessary com to segment remapping (com split).
   error |= resetRemapping();
-  // Enable Vdd regulator
-  error |= enableVddRegulator(true);
   // Set contrast to 50%.
   error |= setContrastLevel((uint8_t) Default::ContrastLevel);
   // Set current phase length value defaults to Default::PhaseLength.

@@ -8,7 +8,7 @@ from PIL import Image
 
 def do_args():
     argp = argparse.ArgumentParser(
-        prog="convert4b",
+        prog="convertimage",
         description="Convert raw RGB image data to 4 bit grayscale.",
         #epilog=(""),
         add_help=True,
@@ -16,8 +16,9 @@ def do_args():
     )
     sparser = argp.add_subparsers(
         title='Positional arguments',
-        metavar='[subcommands]',
+        metavar='format',
         dest='format',
+        required=True
     )
 
     header = sparser.add_parser(
@@ -48,7 +49,8 @@ def do_args():
         obj.add_argument(
             "-o", "--output",
             help="Output image file.",
-            type=str
+            type=str,
+            required=(obj == binary)
         )
         obj.add_argument(
             "-w", "--width",
@@ -69,7 +71,11 @@ def do_args():
             action="store_true",
             default=False
         )
-    return argp.parse_args()
+    args = argp.parse_args()
+    if not args.format:
+        parser.print_help()
+        exit(1)
+    return args
 
 
 def main(args):
@@ -90,10 +96,9 @@ def main(args):
     pixels = pixel_processor(image.tobytes(), args.invert)
 
     if binary:
-        output_binary(pixels, output_file)
+        output_binary(pixels, args.output)
     else:
         name = args.name if args.name else os.path.basename(filename)
-
         output_header(pixels, args.output, width, height, name)
 
 def pixel_processor(in_bytes, invert):

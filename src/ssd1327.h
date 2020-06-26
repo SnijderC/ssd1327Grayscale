@@ -5,10 +5,71 @@
 #ifndef SSD1327_MAX_I2C_BUFFER
 #define SSD1327_MAX_I2C_BUFFER 32
 #endif
+#ifndef SSD1327_MAX_SPI_BUFFER
+#define SSD1327_MAX_SPI_BUFFER 32
+#endif
 
 #include <stdint.h>
 
-class Ssd1327  {
+namespace Ssd1327  {
+
+class Interface {
+  /**
+   * Virtual methods to be implemented for writing data to the display over an.
+   * interaface. E.g. I2C, SPI, 6800 or 8080.
+   *
+   */
+  public:
+  static const int8_t NO_PIN = -1;
+  virtual void begin();
+  /**
+   * Try to reset the display module by reset pin, returns false if not
+   * possible so the Ssd1327 instance can do a software reset.
+   *
+   * @return bool Reset succeeded or not.
+   */
+  virtual bool hwReset();
+  /**
+   * Do an initialisation before sending data, can be left emtpy if not
+   * required.
+   */
+  virtual void beginTransmission()=0;
+  /**
+   * Close a connection after sending data, can be left emtpy if not required.
+   * @return Status of the transmission, 0 for success, other depending in the
+   *         platform.
+   */
+  virtual uint8_t endTransmission()=0;
+  /**
+   * Write a byte.
+   * @param byte to send to the display module.
+   */
+  virtual void write(uint8_t byte)=0;
+  /**
+   * Send command to the display module.
+   * @param command.
+   */
+  virtual uint8_t sendCommand(uint8_t command)=0;
+  /**
+   * Send command args to the display module.
+   * @param arg pointer to arg bytes to send to the module.
+   * @param len Amount of bytes to send.
+   */
+  virtual uint8_t sendCommand(uint8_t* command, uint8_t len)=0;
+  /**
+   * Write data to the display module.
+   * @param data pointer to bytes to send to the module.
+   * @param len Amount of bytes to send.
+   */
+  virtual uint8_t sendData(uint8_t* data, uint16_t len)=0;
+  enum class InterfaceType: uint8_t {
+    Spi = 0,
+    I2c = 1
+  } ;
+  uint8_t type;
+};
+
+class Implementation {
 
 public:
 
@@ -186,9 +247,9 @@ public:
     /**
      * Makes the display controller ignore any command expect for the unlock
      * command (same command with different argument). Use
-     * `Ssd1327::Const::McuProtectEnable` to construct the argument, OR is with
-     * 0x04 to enable the lock, or send it as is, to unlock it:
-     * lock A[3:0] OR Ssd1327::Const::McuProtectEnable.
+     * `Implementation::Const::McuProtectEnable` to construct the argument,
+     * OR is with 0x04 to enable the lock, or send it as is, to unlock it:
+     * lock A[3:0] OR Implementation::Const::McuProtectEnable.
      */
     McuProtectEnable        = 0xfd,
     /**
@@ -276,7 +337,7 @@ public:
    *
    * @param Ssd1327::Interface OLED interface struct.
    */
-  Ssd1327(uint8_t width, uint8_t height);
+  Implementation(uint8_t width, uint8_t height);
   uint8_t setColumnRange(uint8_t start, uint8_t end);
   uint8_t setRowRange(uint8_t start, uint8_t end);
   uint8_t resetRange();
@@ -346,11 +407,6 @@ public:
   // uint8_t setHorizontalScrollLeft();
   // uint8_t activateScroll();
   // uint8_t dectivateScroll();
-
-  uint8_t sendCommand(Cmd command, uint8_t *args, uint8_t argLen);
-  uint8_t sendCommand(Cmd command);
-  uint8_t sendData(uint8_t *data, uint16_t len);
-  uint8_t sendData(uint8_t command);
   uint8_t clear();
   uint8_t init();
   uint8_t getHeight();
@@ -359,6 +415,8 @@ public:
     uint8_t x, uint8_t y, uint8_t width, uint8_t height, uint8_t *image,
     uint16_t len
   );
+  uint8_t reset();
+  Interface* interface;
 
 private:
   uint8_t _width;
@@ -366,16 +424,8 @@ private:
   uint8_t _phaseLen     = (uint8_t) Default::PhaseLength;
   uint8_t _functionSelB = (uint8_t) Default::FunctionSelectionB;
   GpioMode _gpioMode;
-  /**
-   * Virtual method that should implement writing data to the display via I2C
-   * SPI, 6800, etc.
-   *
-   * @param data pointer to bytes to send to the module.
-   * @param len of data.
-   */
-  virtual void _write(uint8_t data)=0;
-  virtual void _beginTransmission()=0;
-  virtual uint8_t _endTransmission()=0;
+
+
   /**
    * Platform independent wait function.
    * Apply a wait/delay/sleep/timer interrupt that suits your platform.
@@ -383,4 +433,5 @@ private:
    * @param ms to wait.
    */
   virtual void _waitms(uint16_t ms)=0;
+};
 };
