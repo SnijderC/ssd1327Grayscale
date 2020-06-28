@@ -70,15 +70,20 @@ uint8_t ArduinoSpiInterface::sendCommand(uint8_t *command, uint8_t len)
   beginTransmission();
   if (_dc > Interface::NO_PIN)
   {
-    Serial.println("CMD: Setting CD low.");
+    // Serial.println("CMD: Setting D/C# low.");
     digitalWrite(_dc, LOW);
-      }
+  }
+  // for (uint8_t i = 0; i < len; i++) 
+  // {
+  //   Serial.printf("CMD: 0x%02x\n", command[i]);
+  // }
   _spi.transfer(command, len);
+  
   if (_dc > Interface::NO_PIN)
   {
-    Serial.println("CMD: Setting CD high.");
+    // Serial.println("CMD: Setting D/C# high.");
     digitalWrite(_dc, HIGH);
-      }
+  }
   return endTransmission();
 }
 
@@ -108,11 +113,11 @@ uint8_t ArduinoSpiInterface::sendData(uint8_t *data, uint16_t len)
     digitalWrite(_dc, HIGH);
   }
   beginTransmission();
-  // Send data in chunks that fit in the display module SPI buffer.
   // for (uint16_t i = 0; i < len; i++) 
   // {
   //   // Serial.printf("DATA: 0x%02x\n", data[i]);
   // }
+  // Send data in chunks that fit in the display module SPI buffer.
   while (len--)
   {
     // Reset connection for every buffer length
