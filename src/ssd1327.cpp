@@ -255,6 +255,7 @@ uint8_t Implementation::clear() {
   {
     error |= interface->sendData(buffer, numBytes);
   }
+  free(buffer);
   return error;
 }
 
