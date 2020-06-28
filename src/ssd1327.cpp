@@ -37,11 +37,14 @@ uint8_t Implementation::resetRange() {
 }
 
 uint8_t Implementation::setDisplayOff() {
+  delay(1);
   return interface->sendCommand((uint8_t)Cmd::DisplayOff);
 }
 
 uint8_t Implementation::setDisplayOn() {
-  return interface->sendCommand((uint8_t)Cmd::DisplayOn);
+  uint8_t ret = interface->sendCommand((uint8_t)Cmd::DisplayOn);
+  delay(1);
+  return ret;
 }
 
 uint8_t Implementation::setRemapping(
@@ -231,32 +234,28 @@ uint8_t Implementation::mcuProtectDisable() {
 }
 
 uint8_t Implementation::clear() {
+  uint8_t error = 0;
   // Calculate number of bytes required to clear the display.
   // width * height / 2 => one nibble per pixel divided by buffer length
-  uint16_t num_bytes = _width * _height / 2;
+  uint16_t numBytes = _width * _height / 2;
   // Calculate how many buffers we need to send to clear the display.
-  // NOTE: Theoretically the buffer could bigger than num_bytes, that's ok, 0
+  // NOTE: Theoretically the buffer could bigger than numBytes, that's ok, 0
   //       buffers will be sent.
-  uint16_t num_buffers = num_bytes / (SSD1327_MAX_I2C_BUFFER - 2);
+  uint16_t numBuffers = numBytes / (1024 - 2);
   // Calculate the remainder of bytes after the buffers are sent.
-  num_bytes = num_bytes % (SSD1327_MAX_I2C_BUFFER - 2);
-
+  numBytes = numBytes % (128 - 2);
+  uint8_t *buffer = (uint8_t*)calloc (1024, sizeof(uint8_t));
   // Clear by buffer length.
-  for (uint16_t buf = 0; buf <= num_buffers; buf++)
+  for (uint16_t buf = 0; buf <= numBuffers; buf++)
   {
-    interface->beginTransmission();
-    interface->write(0x40);
-    for (uint16_t i = 0; i < (SSD1327_MAX_I2C_BUFFER - 2); i++) {
-      interface->write(0x00);
-    }
-    if(interface->endTransmission() != 0) return false;
+    error |= interface->sendData(buffer, 1024);
   }
-  interface->beginTransmission();
   // Clear remainder
-  for (uint16_t i = 0; i < num_bytes; i++) {
-    interface->write(0x00);
+  for (uint16_t i = 0; i < numBytes; i++) 
+  {
+    error |= interface->sendData(buffer, numBytes);
   }
-  return interface->endTransmission() == 0;
+  return error;
 }
 
 uint8_t Implementation::getHeight()
@@ -341,20 +340,22 @@ uint8_t Implementation::init() {
   error |= mcuProtectDisable();
   // Turn it off for now.
   error |= setDisplayOff();
-  // Enable Vdd regulator
-  error |= enableVddRegulator(true);
-  // Set MUX ration to amount of display lines.
-  error |= resetMuxRatio();
+  // Only set necessary com to segment remapping (com split).
+  error |= resetRemapping();
   // Start rendering on line 1.
   error |= setStartLine((uint8_t) Default::StartLine);
   // Set rendering offset to 0.
   error |= setDisplayOffset((uint8_t) Default::DisplayOffset);
-  // Only set necessary com to segment remapping (com split).
-  error |= resetRemapping();
+  // Set MUX ration to amount of display lines.
+  error |= resetMuxRatio();
+  // Enable Vdd regulator
+  error |= enableVddRegulator(true);
   // Set contrast to 50%.
   error |= setContrastLevel((uint8_t) Default::ContrastLevel);
   // Set current phase length value defaults to Default::PhaseLength.
   error |= setPhaseLength(_phaseLen);
+  // Rendering range to begin to end of screen.
+  error |= resetRange();
   // Set the clock frequency and frequency divider.
   error |= setDisplayClock(
     (uint8_t) Default::DisplayClockFrequency,
@@ -372,8 +373,6 @@ uint8_t Implementation::init() {
   error |= functionSelectionB(_functionSelB);
   // Not inverse or all OLED on/off.
   error |= setDisplayNormal();
-  // Rendering range to begin to end of screen.
-  error |= resetRange();
   // Switch it on!
   error |= setDisplayOn();
   _waitms(100);

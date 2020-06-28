@@ -87,15 +87,16 @@ uint8_t ArduinoSpiInterface::sendCommand(uint8_t command)
   beginTransmission();
   if (_dc > Interface::NO_PIN)
   {
-    Serial.println("CMD: Setting DC low.");
+    // Serial.println("CMD: Setting D/C# low.");
     digitalWrite(_dc, LOW);
-      }
+  }
+  // Serial.printf("CMD: 0x%02x\n", command);
   _spi.transfer(command);
   if (_dc > Interface::NO_PIN)
   {
-    Serial.println("CMD: Setting DC high.");
+    // Serial.println("CMD: Setting D/C# high.");
     digitalWrite(_dc, HIGH);
-      }
+  }
   return endTransmission();
 }
 
@@ -103,11 +104,15 @@ uint8_t ArduinoSpiInterface::sendData(uint8_t *data, uint16_t len)
 {
   if (_dc > Interface::NO_PIN)
   {
-    Serial.println("DATA: Setting DC high.");
+    // Serial.println("DATA: Setting D/C# high.");
     digitalWrite(_dc, HIGH);
-      }
+  }
   beginTransmission();
-  // Send data in chunks that fit in the display module I2C buffer.
+  // Send data in chunks that fit in the display module SPI buffer.
+  // for (uint16_t i = 0; i < len; i++) 
+  // {
+  //   // Serial.printf("DATA: 0x%02x\n", data[i]);
+  // }
   while (len--)
   {
     // Reset connection for every buffer length
@@ -116,7 +121,7 @@ uint8_t ArduinoSpiInterface::sendData(uint8_t *data, uint16_t len)
       endTransmission();
       beginTransmission();
     }
-    _spi.transfer(data, len);
+    _spi.transfer(*data++);
   }
   return endTransmission();
 }
@@ -124,10 +129,9 @@ uint8_t ArduinoSpiInterface::sendData(uint8_t *data, uint16_t len)
 void ArduinoSpiInterface::beginTransmission() {
   if (_cs > Interface::NO_PIN)
   {
-    Serial.println("BEGIN: Setting CS low.");
+    // Serial.println("BEGIN: Setting CS# low.");
     digitalWrite(_cs, LOW);
-      }
-  _spi.beginTransaction(_spiSettings);
+  }
 }
 void ArduinoSpiInterface::write(uint8_t data)
 {
@@ -135,20 +139,18 @@ void ArduinoSpiInterface::write(uint8_t data)
 }
 uint8_t ArduinoSpiInterface::endTransmission()
 {
-  _spi.endTransaction();
   if (_cs > Interface::NO_PIN)
   {
-    Serial.println("END: Setting CS high.");
+    // Serial.println("END: Setting CS# high.");
     digitalWrite(_cs, HIGH);
-      }
+  }
   return 0;
 }
 
 bool ArduinoSpiInterface::hWreset()
 {
   if (_rst == Interface::NO_PIN) return false;
-  digitalWrite(_rst, HIGH);
-	delay(100);
+  // Serial.println("Hardware reset!");
 	digitalWrite(_rst, LOW);
 	delay(100);
 	digitalWrite(_rst, HIGH);
@@ -165,23 +167,27 @@ ArduinoSpiInterface::ArduinoSpiInterface(
 ): _spi(spi), _dc(dc), _cs(cs), _rst(rst)
 {
   type = (uint8_t)Interface::InterfaceType::Spi;
-  _spiSettings = SPISettings(_spiSpeed, MSBFIRST, SPI_MODE0);
+  _spiSettings = SPISettings(_spiSpeed, MSBFIRST, SPI_MODE0); // sure
 }
 void ArduinoSpiInterface::begin() {
+  _spi.beginTransaction(_spiSettings);
   if (_rst > Interface::NO_PIN) {
-    Serial.println("INIT: Setting reset high.");
+    // Serial.println("INIT: Setting RST# low.");
     pinMode(_rst, OUTPUT);
+    digitalWrite(_rst, LOW);
+    delay(100);
+    // Serial.println("INIT: Setting RST# high.");
     digitalWrite(_rst, HIGH);
-      }
+  }
   if (_dc > Interface::NO_PIN)
   {
-    Serial.println("INIT: Setting DC high.");
+    // Serial.println("INIT: Setting D/C# high.");
     pinMode(_dc, OUTPUT);
     digitalWrite(_dc, HIGH);
-      }
+  }
   if (_cs > Interface::NO_PIN)
   {
-    Serial.println("INIT: Setting CS high.");
+    // Serial.println("INIT: Setting CS# high.");
     pinMode(_cs, OUTPUT);
     digitalWrite(_cs, HIGH);
   }
