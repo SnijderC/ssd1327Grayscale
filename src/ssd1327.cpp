@@ -288,34 +288,48 @@ uint8_t Implementation::renderImageData(
     return interface->sendData(image, len);
   }
   // This will be way less efficient because it requires several operations on
-  // half of the image bytes.
+  // half of the image's bytes.
   uint8_t bufLen = width / 2 + 1;
-  uint8_t buffer[bufLen];
-  for (uint16_t i = 0; i < len - 1; i += bufLen)
+  uint8_t carry = 0;
+  uint8_t *buffer = (uint8_t*) malloc(bufLen);
+  uint16_t sent = 0;
+  bool even = true;
+  // Loop through the entire image by line buffer. Carry the last bytes of
+  // every even line and null in its last nibble in the line buffer. 
+  // On uneven lines offset the pointer of the line buffer by +1 and read the
+  // line buffer length minus 1 into it. Now put the carried byte into the
+  // line buffer at the first byte. Now shift every byte of the line buffer 4
+  // bits left. This implicitly sets the last nibble to 0x0. 
+  
+  while(len > 0)
   {
-    std::copy_n(image + i, bufLen, buffer);
-    Serial.printf(
-      "Buffer [i] 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x\n",
-      buffer[0], buffer[1], buffer[2], buffer[3], buffer[4]
-    );
-    if (i % 3 == 1)
-    {
-      for (uint8_t b = 0; b < bufLen; b++)
-      {
-        buffer[b] <<= 4;
-        buffer[b] |= buffer[b+1] >> 4;
-      }
+    if (len < bufLen) {
+      std::copy_n(image + sent, bufLen, buffer);
+      buffer[len-1] &= 0xf0;
+      break;
+    } else if (even) {
+      std::copy_n(image + sent, bufLen, buffer);
+      carry = buffer[bufLen-1];
+      buffer[bufLen-1] &= 0xf0;
+      len -= bufLen;
+      sent += bufLen;
     } else {
-      i--;
+      std::copy_n(image + sent, bufLen - 1, ++buffer);
+      --buffer;
+      buffer[0] = carry;
+      for (uint8_t j = 0; j < bufLen-1; j++) 
+      {
+        buffer[j] = buffer[j+1] >> 4 | buffer[j] << 4;
+      }
+      buffer[bufLen-1] <<= 4;
+      len -= (bufLen - 1);
+      sent += (bufLen - 1);
     }
-    buffer[bufLen - 1] &= 0xf0; // clear last 4 bits.
-    Serial.printf(
-      "Buffer [o] 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x\n",
-      buffer[0], buffer[1], buffer[2], buffer[3], buffer[4]
-    );
+    even = !even;
     error = interface->sendData(buffer, bufLen);
     if (error != 0) return error;
   }
+  free(buffer);
   return error;
 }
 
