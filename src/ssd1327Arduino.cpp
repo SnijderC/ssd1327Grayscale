@@ -172,7 +172,7 @@ ArduinoSpiInterface::ArduinoSpiInterface(
 ): _spi(spi), _dc(dc), _cs(cs), _rst(rst)
 {
   type = (uint8_t)Interface::InterfaceType::Spi;
-  _spiSettings = SPISettings(_spiSpeed, MSBFIRST, SPI_MODE0); // sure
+  _spiSettings = SPISettings(spiSpeed, MSBFIRST, SPI_MODE0); // sure
 }
 void ArduinoSpiInterface::begin() {
   _spi.beginTransaction(_spiSettings);

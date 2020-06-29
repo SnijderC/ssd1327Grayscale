@@ -28,7 +28,6 @@ class ArduinoSpiInterface: public Interface {
     int8_t _dc;
     int8_t _cs;
     int8_t _rst;
-    unsigned long _spiSpeed;
     SPISettings _spiSettings;
   public:
     void beginTransmission();
